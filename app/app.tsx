@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, type MouseEvent, type FormEvent } from "react";
+import Preloader from "./components/Preloader";
 import {
   Search,
   Bell,
@@ -272,7 +273,7 @@ export default function App() {
   useEffect(() => {
     const timer = setTimeout(() => {
       setShowSplash(false);
-    }, 2400);
+    }, 1800);
     return () => clearTimeout(timer);
   }, []);
 
@@ -423,44 +424,7 @@ export default function App() {
         overflowX: "hidden",
       }}
     >
-      {}
-      {showSplash && (
-        <div className="fixed inset-0 z-50 h-screen w-screen bg-[#0D0D0D] flex flex-col items-center justify-center transition-all duration-700 overflow-hidden">
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-red-950/60 via-[#0D0D0D] to-[#0D0D0D] pointer-events-none"></div>
-
-          <div className="relative flex flex-col items-center animate-fade-in px-4 text-center">
-            <div
-              className="w-24 h-24 sm:w-28 sm:h-28 bg-gradient-to-tr from-[#E51937] to-[#800717] p-3 shadow-2xl shadow-red-600/30 flex items-center justify-center border-0 transform hover:scale-105 transition-transform duration-300 overflow-hidden"
-              style={{ borderRadius: 0 }}
-            >
-              <img
-                src="/img/favicon.ico"
-                alt="SENAI Revista Digital"
-                className="w-full h-full object-cover"
-                style={{ borderRadius: 0 }}
-              />
-            </div>
-
-            <h1 className="mt-6 text-2xl md:text-3xl font-bold tracking-tight text-white flex items-center gap-2">
-              SENAI <span className="text-[#E51937]">Revista Digital</span>
-            </h1>
-            <p className="text-zinc-400 text-sm mt-2 max-w-sm">
-              Conectando educação, tecnologia e inovação industrial.
-            </p>
-
-            <div className="w-48 h-1.5 bg-zinc-800 rounded-full mt-8 overflow-hidden">
-              <div className="h-full bg-gradient-to-r from-[#E51937] to-red-400 rounded-full animate-[pulse_1.5s_infinite] w-full"></div>
-            </div>
-
-            <button
-              onClick={() => setShowSplash(false)}
-              className="mt-6 text-xs text-zinc-500 hover:text-white transition-colors underline"
-            >
-              Pular Introdução
-            </button>
-          </div>
-        </div>
-      )}
+      {showSplash && <Preloader />}
 
       {}
       <header
