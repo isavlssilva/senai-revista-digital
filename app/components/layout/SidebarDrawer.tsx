@@ -121,7 +121,6 @@ export default function SidebarDrawer({
                   className="w-full h-full object-cover rounded-full"
                 />
               </div>
-              <div className="absolute bottom-0 right-0 w-4 h-4 bg-emerald-500 rounded-full ring-2 ring-zinc-900"></div>
             </div>
             <h3 className="font-bold text-white text-sm">Isabelle Souza</h3>
             <p className="text-xs text-zinc-400 mt-0.5">

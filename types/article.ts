@@ -1,10 +1,24 @@
-export type ArticleStatus = "Publicado" | "Rascunho";
+export type ArticleStatus = "Publicado" | "Rascunho" | "Em revisão";
+
+export type ArticleBlockType = "title" | "text" | "image" | "video" | "callout";
+
+export type ArticleBlock = {
+  id: string;
+  type: ArticleBlockType;
+  heading?: string;
+  content?: string;
+  url?: string;
+  alt?: string;
+  caption?: string;
+  level?: 1 | 2 | 3;
+};
 
 export type Article = {
   id: string;
   title: string;
   excerpt: string;
   content: string;
+  blocks?: ArticleBlock[];
   category: string;
   author: string;
   date: number | string;
@@ -20,6 +34,7 @@ export type Article = {
 export type ArticleFormData = {
   title: string;
   content: string;
+  blocks: ArticleBlock[];
   category: string;
   author: string;
   date: number | string;

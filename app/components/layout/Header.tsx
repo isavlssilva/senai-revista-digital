@@ -1,6 +1,7 @@
 "use client";
 
-import { Search, Bell, Menu } from "lucide-react";
+import { useState } from "react";
+import { Search, Bell, Menu, ChevronDown } from "lucide-react";
 import SenaMascot from "../ui/SenaMascot";
 
 type HeaderProps = {
@@ -21,6 +22,8 @@ type HeaderProps = {
   onToggleNotifications?: () => void;
   onSearchChange?: (value: string) => void;
   onResetSplash?: () => void;
+  categories?: string[];
+  onCategorySelect?: (category: string) => void;
 };
 
 const navItems = [
@@ -48,11 +51,27 @@ export default function Header({
   onToggleNotifications,
   onSearchChange,
   onResetSplash,
+  categories = [
+    "Todos",
+    "Tecnologia",
+    "Inovação",
+    "Automação",
+    "Design",
+    "Projetos",
+    "IA",
+  ],
+  onCategorySelect,
 }: HeaderProps) {
+  const [isCategoryMenuOpen, setIsCategoryMenuOpen] = useState(false);
+
   const handleNavigate = (tab: string) => {
+    if (tab === "categorias") {
+      setIsCategoryMenuOpen((prev) => !prev);
+      return;
+    }
+
     setActiveTab?.(tab);
     onNavigate?.(tab);
-    if (tab === "categorias") setActiveTab?.("categorias");
   };
 
   const handleOpenMenu = () => {
@@ -68,6 +87,11 @@ export default function Header({
   const handleToggleNotifications = () => {
     setNotificationsOpen?.(!notificationsOpen);
     onToggleNotifications?.();
+  };
+
+  const handleCategorySelect = (category: string) => {
+    onCategorySelect?.(category);
+    setIsCategoryMenuOpen(false);
   };
 
   return (
@@ -89,39 +113,71 @@ export default function Header({
             onClick={() => handleNavigate("home")}
             className="flex items-center gap-2.5 cursor-pointer group"
           >
-            <SenaMascot className="w-9 h-9" />
+            <SenaMascot className="w-11 h-11" glow={false} />
             <div className="flex flex-col">
               <div className="flex items-center gap-1">
-                <span className="font-extrabold tracking-tight text-white text-lg leading-none group-hover:text-[#E51937] transition-colors">
+                <span className="font-extrabold tracking-tight text-white text-[1.05rem] sm:text-[1.15rem] leading-none group-hover:text-[#E51937] transition-colors">
                   SENAI
                 </span>
               </div>
-              <span className="text-[10px] tracking-widest text-zinc-400 font-semibold uppercase leading-tight">
+              <span className="text-[10px] sm:text-[10.5px] tracking-widest text-zinc-400 font-semibold uppercase leading-tight">
                 REVISTA DIGITAL
               </span>
             </div>
           </div>
         </div>
 
-        <nav className="hidden md:flex items-center gap-1 bg-zinc-900/60 p-1 rounded-xl border border-zinc-800/50">
-          {navItems.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => handleNavigate(tab.id)}
-              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 relative ${
-                activeTab === tab.id
-                  ? "text-white bg-[#E51937] shadow-md shadow-red-900/30"
-                  : "text-zinc-400 hover:text-white hover:bg-zinc-800/40"
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
+        <nav className="hidden md:flex items-center gap-1 bg-zinc-900/60 p-1 rounded-xl border border-zinc-800/50 relative">
+          {navItems.map((tab) =>
+            tab.id === "categorias" ? (
+              <div key={tab.id} className="relative">
+                <button
+                  onClick={() => handleNavigate(tab.id)}
+                  className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 relative flex items-center gap-2 ${
+                    activeTab === tab.id
+                      ? "text-white bg-[#E51937] shadow-md shadow-red-900/30"
+                      : "text-zinc-400 hover:text-white hover:bg-zinc-800/40"
+                  }`}
+                >
+                  {tab.label}
+                  <ChevronDown className="w-4 h-4" />
+                </button>
+
+                {isCategoryMenuOpen && (
+                  <div className="absolute left-0 top-full mt-2 w-56 rounded-2xl border border-zinc-800 bg-[#18181B] shadow-2xl z-40 overflow-hidden">
+                    {categories.map((category) => (
+                      <button
+                        key={category}
+                        onClick={() => handleCategorySelect(category)}
+                        className="w-full px-4 py-2.5 text-left text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors"
+                      >
+                        {category}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <button
+                key={tab.id}
+                onClick={() => handleNavigate(tab.id)}
+                className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 relative ${
+                  activeTab === tab.id
+                    ? "text-white bg-[#E51937] shadow-md shadow-red-900/30"
+                    : "text-zinc-400 hover:text-white hover:bg-zinc-800/40"
+                }`}
+              >
+                {tab.label}
+              </button>
+            )
+          )}
         </nav>
 
         <div className="flex items-center gap-2">
           <div
-            className={`relative flex items-center transition-all ${isSearchExpanded ? "w-48 md:w-64" : "w-9 md:w-9"}`}
+            className={`relative flex items-center transition-all ${
+              isSearchExpanded ? "w-48 md:w-64" : "w-9 md:w-9"
+            }`}
           >
             <button
               onClick={handleToggleSearch}

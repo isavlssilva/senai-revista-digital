@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, type MouseEvent, type FormEvent } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import Preloader from "./components/Preloader";
 import Header from "./components/layout/Header";
 import SidebarDrawer from "./components/layout/SidebarDrawer";
@@ -9,7 +10,7 @@ import NewsletterForm from "./components/forms/NewsletterForm";
 import Toast from "./components/ui/Toast";
 import ArticleCard from "./components/articles/ArticleCard";
 import SenaMascot from "./components/ui/SenaMascot";
-import type { Article, ArticleFormData, ArticleStatus } from "../types/article";
+import type { Article, ArticleBlock, ArticleBlockType, ArticleFormData, ArticleStatus } from "../types/article";
 import { INITIAL_ARTICLES, CATEGORIES } from "../mocks/articles";
 import {
   Search,
@@ -54,32 +55,133 @@ import {
   Filter,
 } from "lucide-react";
 
-export default function App() {
-  // Navigation & View States
-  const [activeTab, setActiveTab] = useState("home");
+const createBlock = (type: ArticleBlockType): ArticleBlock => {
+  const base: ArticleBlock = {
+    id: `${type}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    type,
+  };
+
+  if (type === "title") {
+    return { ...base, heading: "Título do bloco", level: 2, content: "" };
+  }
+
+  if (type === "text") {
+    return { ...base, content: "Escreva o parágrafo aqui..." };
+  }
+
+  if (type === "image") {
+    return {
+      ...base,
+      url: "https://images.unsplash.com/photo-1522202176988-66273c2fd55f?auto=format&fit=crop&q=80&w=1200",
+      alt: "Imagem ilustrativa da matéria",
+      caption: "Legenda da imagem",
+      content: "",
+    };
+  }
+
+  if (type === "video") {
+    return {
+      ...base,
+      url: "https://www.youtube.com/watch?v=ysz5S6PUM-U",
+      caption: "Descrição do vídeo",
+      content: "",
+    };
+  }
+
+  return {
+    ...base,
+    content: "Destaque importante da matéria.",
+    heading: "Destaque",
+  };
+};
+
+const getBlockLabel = (type: ArticleBlockType) => {
+  const labels: Record<ArticleBlockType, string> = {
+    title: "Título",
+    text: "Texto",
+    image: "Imagem",
+    video: "Vídeo",
+    callout: "Destaque",
+  };
+
+  return labels[type];
+};
+
+const normalizeBlocks = (content: string, blocks?: ArticleBlock[]) => {
+  if (blocks && blocks.length > 0) return blocks;
+
+  const fallbackText = content || "Escreva o conteúdo da matéria...";
+
+  return [
+    {
+      id: `text-${Date.now()}`,
+      type: "text" as const,
+      content: fallbackText,
+    },
+  ];
+};
+
+const serializeBlocks = (list: ArticleBlock[]) => {
+  return list
+    .map((block) => {
+      if (block.type === "title") {
+        return `<h${block.level ?? 2}>${block.heading ?? ""}</h${block.level ?? 2}>`;
+      }
+
+      if (block.type === "image") {
+        return `![${block.alt ?? "Imagem"}](${block.url ?? ""})\n${block.caption ?? ""}`;
+      }
+
+      if (block.type === "video") {
+        return `Vídeo: ${block.url ?? ""}\n${block.caption ?? ""}`;
+      }
+
+      if (block.type === "callout") {
+        return `> ${block.content ?? ""}`;
+      }
+
+      return block.content ?? "";
+    })
+    .join("\n\n");
+};
+
+export default function App({ initialTab = "home" }: { initialTab?: string }) {
+  const router = useRouter();
+  const pathname = usePathname();
+
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [showSplash, setShowSplash] = useState(true);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState("Todos");
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
 
-  // Data States
   const [articles, setArticles] = useState<Article[]>(INITIAL_ARTICLES);
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
   const [adminTab, setAdminTab] = useState("noticias");
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingArticleId, setEditingArticleId] = useState<string | null>(null);
-
-  // Interactive Overlays
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [quizModalOpen, setQuizModalOpen] = useState(false);
   const [quizAnswer, setQuizAnswer] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // New Article Form State
-  const [formData, setFormData] = useState<ArticleFormData>({
+  const pathMap: Record<string, string> = {
+    "/": "home",
+    "/noticias": "noticias",
+    "/categorias": "categorias",
+    "/sobre": "sobre",
+    "/admin": "admin",
+  };
+
+  const effectiveTab = pathname ? pathMap[pathname] ?? activeTab : activeTab;
+
+  const buildFormData = (
+    overrides: Partial<ArticleFormData> = {},
+  ): ArticleFormData => ({
     title: "",
     content: "",
+    blocks: [],
     category: "Tecnologia",
     author: "Leandro Aparecido de Souza",
     date: new Date().toLocaleDateString("pt-BR"),
@@ -87,7 +189,27 @@ export default function App() {
     status: "Rascunho",
     image:
       "https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&q=80&w=1000",
+    ...overrides,
   });
+
+  const getDefaultFormData = () => buildFormData();
+
+  const [formData, setFormData] = useState<ArticleFormData>(getDefaultFormData());
+  const [blocks, setBlocks] = useState<ArticleBlock[]>([]);
+
+  const resetArticleForm = () => {
+    setFormData(getDefaultFormData());
+    setBlocks([]);
+  };
+
+  const syncBlocks = (nextBlocks: ArticleBlock[]) => {
+    setBlocks(nextBlocks);
+    setFormData((prev) => ({
+      ...prev,
+      blocks: nextBlocks,
+      content: nextBlocks.length > 0 ? serializeBlocks(nextBlocks) : prev.content,
+    }));
+  };
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -137,6 +259,9 @@ export default function App() {
       return;
     }
 
+    const nextBlocks = blocks.length > 0 ? blocks : normalizeBlocks(formData.content, formData.blocks);
+    const serializedContent = serializeBlocks(nextBlocks);
+
     if (editingArticleId) {
       setArticles((prevArticles) =>
         prevArticles.map((art) =>
@@ -144,10 +269,11 @@ export default function App() {
             ? {
                 ...art,
                 title: formData.title,
-                content: formData.content || "Conteúdo atualizado do artigo.",
-                excerpt: formData.content
-                  ? `${formData.content.slice(0, 120)}...`
+                content: serializedContent || "Conteúdo atualizado do artigo.",
+                excerpt: serializedContent
+                  ? `${serializedContent.slice(0, 120)}...`
                   : art.excerpt,
+                blocks: nextBlocks,
                 category: formData.category,
                 author: formData.author,
                 date: formData.date,
@@ -163,12 +289,13 @@ export default function App() {
       const newArt: Article = {
         id: String(Date.now()),
         title: formData.title,
-        excerpt: formData.content
-          ? `${formData.content.slice(0, 120)}...`
+        excerpt: serializedContent
+          ? `${serializedContent.slice(0, 120)}...`
           : "Inovação e tecnologia em destaque na revista digital do SENAI.",
         content:
-          formData.content ||
+          serializedContent ||
           "Conteúdo completo da nova notícia publicada no portal do SENAI Revista Digital.",
+        blocks: nextBlocks,
         category: formData.category,
         author: formData.author,
         date: formData.date,
@@ -186,17 +313,7 @@ export default function App() {
 
     setShowAddModal(false);
     setEditingArticleId(null);
-    setFormData({
-      title: "",
-      content: "",
-      category: "Tecnologia",
-      author: "Leandro Aparecido de Souza",
-      date: new Date().toLocaleDateString("pt-BR"),
-      time: "08:00",
-      status: "Rascunho",
-      image:
-        "https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&q=80&w=1000",
-    });
+    resetArticleForm();
   };
 
   const handleDeleteArticle = (id: string) => {
@@ -205,18 +322,52 @@ export default function App() {
   };
 
   const handleEditArticle = (art: Article) => {
+    const nextBlocks = normalizeBlocks(art.content, art.blocks);
     setEditingArticleId(art.id);
-    setFormData({
-      title: art.title,
-      content: art.content,
-      category: art.category,
-      author: art.author,
-      date: art.date,
-      time: art.time || "08:00",
-      status: art.status,
-      image: art.image,
-    });
+    setBlocks(nextBlocks);
+    setFormData(
+      buildFormData({
+        title: art.title,
+        content: serializeBlocks(nextBlocks),
+        blocks: nextBlocks,
+        category: art.category,
+        author: art.author,
+        date: art.date,
+        time: art.time || "08:00",
+        status: art.status,
+        image: art.image,
+      }),
+    );
     setShowAddModal(true);
+  };
+
+  const updateBlock = (blockId: string, nextValue: Partial<ArticleBlock>) => {
+    const updated = blocks.map((block) =>
+      block.id === blockId ? { ...block, ...nextValue } : block,
+    );
+    syncBlocks(updated);
+  };
+
+  const addBlock = (type: ArticleBlockType) => {
+    syncBlocks([...blocks, createBlock(type)]);
+  };
+
+  const removeBlock = (blockId: string) => {
+    syncBlocks(blocks.filter((block) => block.id !== blockId));
+  };
+
+  const moveBlock = (blockId: string, direction: "up" | "down") => {
+    const index = blocks.findIndex((block) => block.id === blockId);
+    if (index < 0) return;
+
+    const nextIndex = direction === "up" ? index - 1 : index + 1;
+    if (nextIndex < 0 || nextIndex >= blocks.length) return;
+
+    const next = [...blocks];
+    const item = next[index];
+    next[index] = next[nextIndex];
+    next[nextIndex] = item;
+    syncBlocks(next);
   };
 
   const filteredArticles = articles.filter((art) => {
@@ -229,6 +380,24 @@ export default function App() {
   });
 
   const featuredArticle = articles.find((a) => a.featured) || articles[0];
+
+  const navigateToTab = (tab: string) => {
+    setActiveTab(tab);
+    if (tab === "categorias") setSelectedCategory("Todos");
+
+    const routes: Record<string, string> = {
+      home: "/",
+      noticias: "/noticias",
+      categorias: "/categorias",
+      sobre: "/sobre",
+      admin: "/admin",
+    };
+
+    const targetRoute = routes[tab];
+    if (targetRoute) router.push(targetRoute);
+  };
+
+  const currentContentTab = effectiveTab;
 
   return (
     <div
@@ -252,23 +421,26 @@ export default function App() {
         notificationsOpen={notificationsOpen}
         onOpenMenu={() => setIsDrawerOpen(true)}
         onNavigate={(tab) => {
-          setActiveTab(tab);
-          if (tab === "categorias") setSelectedCategory("Todos");
+          if (tab !== "categorias") {
+            navigateToTab(tab);
+          }
         }}
         onToggleSearch={() => setIsSearchExpanded((prev) => !prev)}
         onToggleNotifications={() => setNotificationsOpen((prev) => !prev)}
         onSearchChange={setSearchQuery}
         onResetSplash={() => setShowSplash(true)}
+        categories={CATEGORIES}
+        onCategorySelect={(category) => {
+          setSelectedCategory(category);
+          setActiveTab("home");
+        }}
       />
 
       <SidebarDrawer
         isOpen={isDrawerOpen}
         activeTab={activeTab}
         onClose={() => setIsDrawerOpen(false)}
-        onNavigate={(tab) => {
-          setActiveTab(tab);
-          if (tab === "categorias") setSelectedCategory("Todos");
-        }}
+        onNavigate={(tab) => navigateToTab(tab)}
         onToggleNotifications={() => setNotificationsOpen(true)}
         onToast={triggerToast}
         onCategorySelect={(category) => setSelectedCategory(category)}
@@ -289,9 +461,7 @@ export default function App() {
         className="w-full px-0 md:px-3 py-0 pb-20"
         style={{ margin: 0, maxWidth: "100%" }}
       >
-        {(activeTab === "home" ||
-          activeTab === "noticias" ||
-          activeTab === "categorias") && (
+        {activeTab === "home" && (
           <div className="space-y-10 animate-fade-in px-0 md:px-3">
             {featuredArticle && (
               <section
@@ -314,8 +484,7 @@ export default function App() {
                         Destaque
                       </span>
                       <span className="text-zinc-400 text-xs flex items-center gap-1">
-                        <Clock className="w-3.5 h-3.5" />{" "}
-                        {featuredArticle.readTime}
+                        <Clock className="w-3.5 h-3.5" /> {featuredArticle.readTime}
                       </span>
                     </div>
 
@@ -361,20 +530,22 @@ export default function App() {
                 </span>
               </div>
 
-              <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
-                {CATEGORIES.map((cat) => (
-                  <button
-                    key={cat}
-                    onClick={() => setSelectedCategory(cat)}
-                    className={`px-4 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all duration-200 ${
-                      selectedCategory === cat
-                        ? "bg-[#E51937] text-white shadow-lg shadow-red-950/50 border border-red-500/50 scale-105"
-                        : "bg-zinc-900/90 text-zinc-400 hover:text-white hover:bg-zinc-800 border border-zinc-800"
-                    }`}
-                  >
-                    {cat}
-                  </button>
-                ))}
+              <div className="max-w-xs">
+                <label htmlFor="category-filter" className="sr-only">
+                  Filtrar por categoria
+                </label>
+                <select
+                  id="category-filter"
+                  value={selectedCategory}
+                  onChange={(e) => setSelectedCategory(e.target.value)}
+                  className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2.5 text-sm text-white outline-none focus:border-[#E51937]"
+                >
+                  {CATEGORIES.map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  ))}
+                </select>
               </div>
             </section>
 
@@ -447,6 +618,127 @@ export default function App() {
                 ))}
               </div>
             </section>
+          </div>
+        )}
+
+        {activeTab === "noticias" && (
+          <div className="space-y-8 animate-fade-in px-0 md:px-3">
+            <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between border-b border-zinc-800 pb-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#E51937]">
+                  Notícias
+                </p>
+                <h1 className="text-3xl font-black text-white mt-2">
+                  Últimas reportagens
+                </h1>
+              </div>
+              <span className="text-xs text-zinc-400">
+                {filteredArticles.length} matérias publicadas
+              </span>
+            </div>
+
+            <div className="max-w-xs">
+              <label htmlFor="news-category-filter" className="sr-only">
+                Filtrar notícias por categoria
+              </label>
+              <select
+                id="news-category-filter"
+                value={selectedCategory}
+                onChange={(e) => setSelectedCategory(e.target.value)}
+                className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2.5 text-sm text-white outline-none focus:border-[#E51937]"
+              >
+                {CATEGORIES.map((cat) => (
+                  <option key={cat} value={cat}>
+                    {cat}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {filteredArticles.length === 0 ? (
+              <div className="p-12 text-center bg-zinc-900/40 rounded-3xl border border-zinc-800">
+                <Compass className="w-10 h-10 text-zinc-600 mx-auto mb-3" />
+                <p className="text-zinc-300 font-semibold text-sm">
+                  Nenhuma notícia encontrada
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredArticles.map((art) => (
+                  <ArticleCard
+                    key={art.id}
+                    article={art}
+                    onOpen={handleOpenArticle}
+                    onLike={handleLikeArticle}
+                    onSave={handleSaveArticle}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === "categorias" && (
+          <div className="space-y-8 animate-fade-in px-0 md:px-3">
+            <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between border-b border-zinc-800 pb-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#E51937]">
+                  Categorias
+                </p>
+                <h1 className="text-3xl font-black text-white mt-2">
+                  Explore por tema
+                </h1>
+              </div>
+              <span className="text-xs text-zinc-400">
+                {CATEGORIES.length} temas disponíveis
+              </span>
+            </div>
+
+            <div className="max-w-md">
+              <label htmlFor="category-page-filter" className="sr-only">
+                Escolha uma categoria
+              </label>
+              <select
+                id="category-page-filter"
+                value={selectedCategory}
+                onChange={(e) => setSelectedCategory(e.target.value)}
+                className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2.5 text-sm text-white outline-none focus:border-[#E51937]"
+              >
+                {CATEGORIES.map((cat) => (
+                  <option key={cat} value={cat}>
+                    {cat}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-4">
+              <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+                <h2 className="text-xl font-bold text-white tracking-tight">
+                  {selectedCategory === "Todos"
+                    ? "Todas as categorias"
+                    : selectedCategory}
+                </h2>
+                <button
+                  onClick={() => setSelectedCategory("Todos")}
+                  className="text-xs font-semibold text-[#E51937] hover:underline"
+                >
+                  Limpar filtro
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredArticles.map((art) => (
+                  <ArticleCard
+                    key={art.id}
+                    article={art}
+                    onOpen={handleOpenArticle}
+                    onLike={handleLikeArticle}
+                    onSave={handleSaveArticle}
+                  />
+                ))}
+              </div>
+            </div>
           </div>
         )}
 
@@ -589,17 +881,20 @@ export default function App() {
                   <button
                     onClick={() => {
                       setEditingArticleId(null);
-                      setFormData({
-                        title: "",
-                        content: "",
-                        category: "Tecnologia",
-                        author: "Leandro Aparecido de Souza",
-                        date: new Date().toLocaleDateString("pt-BR"),
-                        time: "08:00",
-                        status: "Rascunho",
-                        image:
-                          "https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&q=80&w=1000",
-                      });
+                      setFormData(
+                        buildFormData({
+                          title: "",
+                          content: "",
+                          blocks: [],
+                          category: "Tecnologia",
+                          author: "Leandro Aparecido de Souza",
+                          date: new Date().toLocaleDateString("pt-BR"),
+                          time: "08:00",
+                          status: "Rascunho",
+                          image:
+                            "https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&q=80&w=1000",
+                        }),
+                      );
                       setShowAddModal(true);
                     }}
                     className="px-4 py-2.5 bg-[#E51937] hover:bg-red-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md flex items-center justify-center gap-2"
@@ -748,22 +1043,43 @@ export default function App() {
                   </h3>
                   <div className="h-64 flex items-end gap-3 pt-8 pb-2 px-4 bg-zinc-900/50 rounded-2xl border border-zinc-800">
                     {[
-                      { name: "Tecnologia", val: "80%" },
-                      { name: "Inovação", val: "65%" },
-                      { name: "Automação", val: "90%" },
-                      { name: "Projetos", val: "45%" },
-                      { name: "Design", val: "55%" },
-                      { name: "IA", val: "95%" },
+                      {
+                        name: "Tecnologia",
+                        val: "80%",
+                      },
+                      {
+                        name: "Inovação",
+                        val: "65%",
+                      },
+                      {
+                        name: "Automação",
+                        val: "90%",
+                      },
+                      {
+                        name: "Projetos",
+                        val: "45%",
+                      },
+                      {
+                        name: "Design",
+                        val: "55%",
+                      },
+                      {
+                        name: "IA",
+                        val: "95%",
+                      },
                     ].map((bar, i) => (
                       <div
                         key={i}
                         className="flex-1 flex flex-col items-center gap-2 h-full justify-end group"
                       >
+                        <div className="w-full flex items-center justify-center text-[10px] text-zinc-500 font-medium">
+                          {bar.val}
+                        </div>
                         <div
+                          className="w-full rounded-t-xl bg-gradient-to-t from-[#E51937] to-red-400 shadow-lg shadow-red-900/30"
                           style={{ height: bar.val }}
-                          className="w-full bg-gradient-to-t from-red-900 to-[#E51937] rounded-t-lg group-hover:brightness-125 transition-all shadow-lg"
                         ></div>
-                        <span className="text-[10px] text-zinc-400 font-medium truncate w-full text-center">
+                        <span className="text-[10px] text-zinc-500">
                           {bar.name}
                         </span>
                       </div>
@@ -788,167 +1104,41 @@ export default function App() {
               </div>
               <button
                 onClick={() => setShowAddModal(false)}
-                className="p-1.5 text-zinc-400 hover:text-white rounded-lg hover:bg-zinc-800"
+                className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-xl transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form
-              onSubmit={handlePublishArticle}
-              className="grid grid-cols-1 lg:grid-cols-12 gap-6"
-            >
-              <div className="lg:col-span-8 space-y-4">
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-400 mb-1">
-                    Título da notícia *
+            <form onSubmit={handlePublishArticle} className="space-y-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                    Título da notícia
                   </label>
                   <input
                     type="text"
-                    required
-                    placeholder="Título da notícia..."
                     value={formData.title}
                     onChange={(e) =>
-                      setFormData({ ...formData, title: e.target.value })
+                      setFormData((prev) => ({ ...prev, title: e.target.value }))
                     }
-                    className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#E51937]"
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm text-white focus:border-[#E51937] outline-none"
+                    placeholder="Digite o título da matéria"
                   />
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-400 mb-1">
-                    Conteúdo da publicação
-                  </label>
-                  <div className="border border-zinc-700 rounded-xl overflow-hidden bg-zinc-900">
-                    <div className="flex flex-wrap items-center gap-1 p-2 bg-zinc-800/80 border-b border-zinc-700 text-zinc-300">
-                      <button
-                        type="button"
-                        className="p-1.5 hover:bg-zinc-700 rounded"
-                      >
-                        <Bold className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        className="p-1.5 hover:bg-zinc-700 rounded"
-                      >
-                        <Italic className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        className="p-1.5 hover:bg-zinc-700 rounded"
-                      >
-                        <Underline className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        className="p-1.5 hover:bg-zinc-700 rounded"
-                      >
-                        <Strikethrough className="w-3.5 h-3.5" />
-                      </button>
-                      <span className="w-px h-4 bg-zinc-700 mx-1"></span>
-                      <button
-                        type="button"
-                        className="p-1.5 hover:bg-zinc-700 rounded"
-                      >
-                        <AlignLeft className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        className="p-1.5 hover:bg-zinc-700 rounded"
-                      >
-                        <AlignCenter className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        className="p-1.5 hover:bg-zinc-700 rounded"
-                      >
-                        <AlignRight className="w-3.5 h-3.5" />
-                      </button>
-                      <span className="w-px h-4 bg-zinc-700 mx-1"></span>
-                      <button
-                        type="button"
-                        className="p-1.5 hover:bg-zinc-700 rounded"
-                      >
-                        <List className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        className="p-1.5 hover:bg-zinc-700 rounded"
-                      >
-                        <ListOrdered className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        className="p-1.5 hover:bg-zinc-700 rounded"
-                      >
-                        <ImageIcon className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        className="p-1.5 hover:bg-zinc-700 rounded"
-                      >
-                        <LinkIcon className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        className="p-1.5 hover:bg-zinc-700 rounded"
-                      >
-                        <Quote className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                    <textarea
-                      rows={8}
-                      placeholder="Escreva o conteúdo completo da sua notícia aqui..."
-                      value={formData.content}
-                      onChange={(e) =>
-                        setFormData({ ...formData, content: e.target.value })
-                      }
-                      className="w-full bg-zinc-900 p-4 text-xs text-white focus:outline-none resize-none"
-                    ></textarea>
-                  </div>
-                </div>
-              </div>
-
-              <div className="lg:col-span-4 space-y-4 bg-zinc-900/60 p-4 rounded-2xl border border-zinc-800">
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-400 mb-1">
-                    Imagem da capa *
-                  </label>
-                  <div className="relative rounded-xl overflow-hidden border border-zinc-700 h-32 bg-zinc-900 group">
-                    <img
-                      src={formData.image}
-                      alt="Capa Preview"
-                      className="w-full h-full object-cover"
-                    />
-                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const url = prompt(
-                            "Cole a URL de uma imagem da internet:",
-                          );
-                          if (url) setFormData({ ...formData, image: url });
-                        }}
-                        className="text-[11px] bg-white/20 hover:bg-white/40 text-white font-medium px-3 py-1 rounded-lg backdrop-blur"
-                      >
-                        Trocar imagem
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-400 mb-1">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
                     Categoria
                   </label>
                   <select
                     value={formData.category}
                     onChange={(e) =>
-                      setFormData({ ...formData, category: e.target.value })
+                      setFormData((prev) => ({ ...prev, category: e.target.value }))
                     }
-                    className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#E51937]"
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm text-white focus:border-[#E51937] outline-none"
                   >
-                    {CATEGORIES.filter((c) => c !== "Todos").map((cat) => (
+                    {CATEGORIES.filter((cat) => cat !== "Todos").map((cat) => (
                       <option key={cat} value={cat}>
                         {cat}
                       </option>
@@ -956,163 +1146,386 @@ export default function App() {
                   </select>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-400 mb-1">
-                    Autor *
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                    Autor
                   </label>
-                  <select
+                  <input
+                    type="text"
                     value={formData.author}
                     onChange={(e) =>
-                      setFormData({ ...formData, author: e.target.value })
+                      setFormData((prev) => ({ ...prev, author: e.target.value }))
                     }
-                    className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#E51937]"
-                  >
-                    <option value="Leandro Aparecido de Souza">
-                      LEANDRO APARECIDO DE SOUZA
-                    </option>
-                    <option value="Isabelle Souza">ISABELLE SOUZA</option>
-                    <option value="Prof. Ricardo Silva">
-                      PROF. RICARDO SILVA
-                    </option>
-                  </select>
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm text-white focus:border-[#E51937] outline-none"
+                  />
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-[11px] font-semibold text-zinc-400 mb-1">
-                      Data
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.date}
-                      onChange={(e) =>
-                        setFormData({ ...formData, date: e.target.value })
-                      }
-                      className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-2.5 py-1.5 text-xs text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-semibold text-zinc-400 mb-1">
-                      Horário
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.time}
-                      onChange={(e) =>
-                        setFormData({ ...formData, time: e.target.value })
-                      }
-                      className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-2.5 py-1.5 text-xs text-white"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-400 mb-1">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
                     Status
                   </label>
                   <select
                     value={formData.status}
                     onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        status: e.target.value as ArticleStatus,
-                      })
+                      setFormData((prev) => ({ ...prev, status: e.target.value as ArticleStatus }))
                     }
-                    className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none"
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm text-white focus:border-[#E51937] outline-none"
                   >
-                    <option value="Publicado">Publicado</option>
                     <option value="Rascunho">Rascunho</option>
+                    <option value="Publicado">Publicado</option>
+                    <option value="Em revisão">Em revisão</option>
                   </select>
                 </div>
 
-                <div className="pt-2 flex items-center justify-between gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowAddModal(false)}
-                    className="px-3 py-2 text-xs font-semibold text-zinc-400 hover:text-white bg-zinc-800 rounded-xl"
-                  >
-                    Excluir notícia
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-4 py-2 bg-[#E51937] hover:bg-red-700 text-white font-bold text-xs uppercase rounded-xl shadow-lg flex items-center gap-1"
-                  >
-                    Publicar notícia
-                  </button>
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                    Data
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.date}
+                    onChange={(e) =>
+                      setFormData((prev) => ({ ...prev, date: e.target.value }))
+                    }
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm text-white focus:border-[#E51937] outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                    Hora
+                  </label>
+                  <input
+                    type="time"
+                    value={formData.time}
+                    onChange={(e) =>
+                      setFormData((prev) => ({ ...prev, time: e.target.value }))
+                    }
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm text-white focus:border-[#E51937] outline-none"
+                  />
                 </div>
               </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                  Imagem de capa
+                </label>
+                <input
+                  type="text"
+                  value={formData.image}
+                  onChange={(e) =>
+                    setFormData((prev) => ({ ...prev, image: e.target.value }))
+                  }
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm text-white focus:border-[#E51937] outline-none"
+                  placeholder="URL da imagem"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                  Conteúdo
+                </label>
+                <div className="bg-zinc-950 border border-zinc-800 rounded-2xl overflow-hidden">
+                  <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-800 text-zinc-400 flex-wrap">
+                    {[Bold, Italic, Underline, Strikethrough, AlignLeft, AlignCenter, AlignRight, List, ListOrdered, ImageIcon, LinkIcon, Quote].map((Icon, index) => (
+                      <button
+                        key={index}
+                        type="button"
+                        className="p-2 rounded-lg hover:bg-zinc-800 hover:text-white transition-colors"
+                        title="Ferramenta de edição"
+                      >
+                        <Icon className="w-4 h-4" />
+                      </button>
+                    ))}
+                  </div>
+                  <textarea
+                    rows={7}
+                    value={formData.content}
+                    onChange={(e) =>
+                      setFormData((prev) => ({ ...prev, content: e.target.value }))
+                    }
+                    className="w-full bg-transparent text-sm text-white p-3 outline-none resize-none"
+                    placeholder="Escreva o conteúdo da notícia..."
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddModal(false)}
+                  className="px-4 py-2 text-sm font-medium text-zinc-300 hover:text-white transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 bg-[#E51937] hover:bg-red-700 text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-red-950/40"
+                >
+                  {editingArticleId ? "Salvar alterações" : "Publicar notícia"}
+                </button>
+              </div>
             </form>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <label className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                  Estrutura da matéria
+                </label>
+
+                <div className="flex flex-wrap gap-2">
+                  {[{ type: "text", label: "Texto" }, { type: "title", label: "Título" }, { type: "image", label: "Imagem" }, { type: "video", label: "Vídeo" }, { type: "callout", label: "Destaque" }].map((item) => (
+                    <button
+                      key={item.type}
+                      type="button"
+                      onClick={() => addBlock(item.type as ArticleBlockType)}
+                      className="px-2.5 py-1.5 rounded-lg border border-zinc-700 bg-zinc-900 text-[10px] font-bold uppercase tracking-wider text-zinc-300 hover:border-[#E51937] hover:text-white transition-colors"
+                    >
+                      + {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {blocks.length === 0 ? (
+              <div className="border border-dashed border-zinc-700 rounded-2xl bg-zinc-950/60 p-5 text-center">
+                <p className="text-sm font-medium text-zinc-300">
+                  Nenhum bloco adicionado ainda.
+                </p>
+                <p className="text-xs text-zinc-500 mt-1">
+                  Use os botões acima para montar a notícia por blocos.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {blocks.map((block, index) => (
+                  <div
+                    key={block.id}
+                    className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-3 space-y-3"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#E51937]">
+                        {getBlockLabel(block.type)}
+                      </span>
+
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => moveBlock(block.id, "up")}
+                          className="p-1.5 rounded-lg border border-zinc-700 text-zinc-300 hover:text-white transition-colors"
+                          title="Mover para cima"
+                        >
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => moveBlock(block.id, "down")}
+                          className="p-1.5 rounded-lg border border-zinc-700 text-zinc-300 hover:text-white transition-colors"
+                          title="Mover para baixo"
+                        >
+                          ↓
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removeBlock(block.id)}
+                          className="p-1.5 rounded-lg border border-red-800/60 text-red-300 hover:bg-red-950/50 transition-colors"
+                          title="Remover bloco"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {block.type === "title" && (
+                      <div className="grid grid-cols-1 md:grid-cols-[1fr_120px] gap-3">
+                        <input
+                          type="text"
+                          value={block.heading ?? ""}
+                          onChange={(e) =>
+                            updateBlock(block.id, { heading: e.target.value })
+                          }
+                          placeholder="Título do bloco"
+                          className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-[#E51937]"
+                        />
+                        <select
+                          value={String(block.level ?? 2)}
+                          onChange={(e) =>
+                            updateBlock(block.id, {
+                              level: Number(e.target.value) as 1 | 2 | 3,
+                            })
+                          }
+                          className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-[#E51937]"
+                        >
+                          <option value="1">H1</option>
+                          <option value="2">H2</option>
+                          <option value="3">H3</option>
+                        </select>
+                      </div>
+                    )}
+
+                    {block.type === "text" && (
+                      <textarea
+                        rows={5}
+                        value={block.content ?? ""}
+                        onChange={(e) =>
+                          updateBlock(block.id, { content: e.target.value })
+                        }
+                        placeholder="Escreva o conteúdo do bloco..."
+                        className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white outline-none resize-none focus:border-[#E51937]"
+                      />
+                    )}
+
+                    {block.type === "image" && (
+                      <div className="space-y-3">
+                        <input
+                          type="url"
+                          value={block.url ?? ""}
+                          onChange={(e) =>
+                            updateBlock(block.id, { url: e.target.value })
+                          }
+                          placeholder="URL da imagem"
+                          className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-[#E51937]"
+                        />
+                        <input
+                          type="text"
+                          value={block.alt ?? ""}
+                          onChange={(e) =>
+                            updateBlock(block.id, { alt: e.target.value })
+                          }
+                          placeholder="Texto alternativo"
+                          className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-[#E51937]"
+                        />
+                        <input
+                          type="text"
+                          value={block.caption ?? ""}
+                          onChange={(e) =>
+                            updateBlock(block.id, { caption: e.target.value })
+                          }
+                          placeholder="Legenda da imagem"
+                          className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-[#E51937]"
+                        />
+                      </div>
+                    )}
+
+                    {block.type === "video" && (
+                      <div className="space-y-3">
+                        <input
+                          type="url"
+                          value={block.url ?? ""}
+                          onChange={(e) =>
+                            updateBlock(block.id, { url: e.target.value })
+                          }
+                          placeholder="URL do vídeo"
+                          className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-[#E51937]"
+                        />
+                        <input
+                          type="text"
+                          value={block.caption ?? ""}
+                          onChange={(e) =>
+                            updateBlock(block.id, { caption: e.target.value })
+                          }
+                          placeholder="Descrição do vídeo"
+                          className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-[#E51937]"
+                        />
+                      </div>
+                    )}
+
+                    {block.type === "callout" && (
+                      <textarea
+                        rows={4}
+                        value={block.content ?? ""}
+                        onChange={(e) =>
+                          updateBlock(block.id, { content: e.target.value })
+                        }
+                        placeholder="Texto do destaque..."
+                        className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white outline-none resize-none focus:border-[#E51937]"
+                      />
+                    )}
+
+                    <div className="text-[10px] text-zinc-500">
+                      Bloco {index + 1}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
 
       {selectedArticle && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in overflow-y-auto">
-          <div className="bg-[#18181B] border border-zinc-700/80 rounded-3xl w-full max-w-3xl my-8 overflow-hidden shadow-2xl relative">
-            <div className="relative h-64 md:h-80 w-full overflow-hidden">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+          <div className="bg-[#18181B] border border-zinc-800 rounded-3xl w-full max-w-5xl max-h-[90vh] overflow-y-auto shadow-2xl">
+            <div className="relative h-64 md:h-80 overflow-hidden">
               <img
                 src={selectedArticle.image}
                 alt={selectedArticle.title}
                 className="w-full h-full object-cover"
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-[#18181B] via-black/20 to-transparent"></div>
-
               <button
                 onClick={() => setSelectedArticle(null)}
-                className="absolute top-4 right-4 p-2 bg-black/60 hover:bg-black text-white rounded-full backdrop-blur transition-all"
+                className="absolute top-4 right-4 p-2.5 rounded-full bg-black/60 backdrop-blur-sm text-white hover:bg-black/80 transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
-
-              <div className="absolute bottom-4 left-6 right-6">
-                <span className="bg-[#E51937] text-white text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-full">
-                  {selectedArticle.category}
-                </span>
-                <h1 className="text-xl md:text-3xl font-extrabold text-white mt-2 leading-tight">
-                  {selectedArticle.title}
-                </h1>
-              </div>
             </div>
 
             <div className="p-6 md:p-8 space-y-6">
-              <div className="flex items-center justify-between pb-4 border-b border-zinc-800 text-xs text-zinc-400">
+              <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wider text-zinc-400">
+                <span className="bg-red-500/10 text-[#E51937] px-2.5 py-1 rounded-full border border-red-500/20">
+                  {selectedArticle.category}
+                </span>
+                <span>{selectedArticle.date}</span>
+                <span>•</span>
+                <span>{selectedArticle.readTime}</span>
+              </div>
+
+              <h2 className="text-2xl md:text-4xl font-black text-white leading-tight">
+                {selectedArticle.title}
+              </h2>
+
+              <div className="flex items-center justify-between border-b border-zinc-800 pb-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-red-600 flex items-center justify-center font-bold text-white uppercase">
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-[#E51937] to-red-700 flex items-center justify-center text-white font-bold text-sm">
                     {selectedArticle.author.charAt(0)}
                   </div>
                   <div>
-                    <span className="font-semibold text-zinc-200 block">
+                    <p className="text-sm font-semibold text-white">
                       {selectedArticle.author}
-                    </span>
-                    <span className="text-[10px]">
-                      {selectedArticle.date} • {selectedArticle.readTime}
-                    </span>
+                    </p>
+                    <p className="text-[11px] text-zinc-400">
+                      Especialista em {selectedArticle.category}
+                    </p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 text-zinc-400">
                   <button
                     onClick={(e) => handleLikeArticle(selectedArticle.id, e)}
-                    className="p-2 bg-zinc-900 hover:bg-zinc-800 rounded-xl border border-zinc-800 flex items-center gap-1.5 text-xs text-red-400"
+                    className="p-2.5 bg-zinc-900 hover:bg-zinc-800 rounded-xl transition-colors"
+                    title="Curtir"
                   >
-                    <Heart className="w-4 h-4 fill-red-500" />
-                    <span>{selectedArticle.likes}</span>
+                    <Heart className="w-4 h-4" />
                   </button>
                   <button
-                    onClick={() =>
-                      triggerToast("Link copiado para a área de transferência!")
-                    }
-                    className="p-2 bg-zinc-900 hover:bg-zinc-800 rounded-xl border border-zinc-800 text-zinc-300"
+                    onClick={(e) => handleSaveArticle(selectedArticle.id, e)}
+                    className="p-2.5 bg-zinc-900 hover:bg-zinc-800 rounded-xl transition-colors"
+                    title="Salvar"
+                  >
+                    <Bookmark className="w-4 h-4" />
+                  </button>
+                  <button
+                    className="p-2.5 bg-zinc-900 hover:bg-zinc-800 rounded-xl transition-colors"
+                    title="Compartilhar"
                   >
                     <Share2 className="w-4 h-4" />
                   </button>
                 </div>
               </div>
 
-              <div className="space-y-4 text-xs md:text-sm text-zinc-300 leading-relaxed font-sans">
-                {selectedArticle.content.split("\n\n").map((paragraph, idx) => (
-                  <p key={idx}>{paragraph}</p>
-                ))}
+              <div className="prose prose-invert max-w-none text-zinc-300 text-sm md:text-base leading-relaxed whitespace-pre-line">
+                {selectedArticle.content}
               </div>
             </div>
           </div>
