@@ -149,8 +149,8 @@ export default function App({ initialTab = "home" }: { initialTab?: string }) {
   const router = useRouter();
   const pathname = usePathname();
 
-  const [activeTab, setActiveTab] = useState(initialTab);
-  const [showSplash, setShowSplash] = useState(true);
+  const [activeTab, setActiveTab] = useState(initialTab ?? "home");
+  const [showSplash, setShowSplash] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState("Todos");
   const [searchQuery, setSearchQuery] = useState("");
@@ -174,7 +174,7 @@ export default function App({ initialTab = "home" }: { initialTab?: string }) {
     "/admin": "admin",
   };
 
-  const effectiveTab = pathname ? pathMap[pathname] ?? activeTab : activeTab;
+  const currentTab = pathname ? pathMap[pathname] ?? activeTab : activeTab;
 
   const buildFormData = (
     overrides: Partial<ArticleFormData> = {},
@@ -212,10 +212,11 @@ export default function App({ initialTab = "home" }: { initialTab?: string }) {
   };
 
   useEffect(() => {
-    const timer = setTimeout(() => {
+    const timer = window.setTimeout(() => {
       setShowSplash(false);
-    }, 1800);
-    return () => clearTimeout(timer);
+    }, 1600);
+
+    return () => window.clearTimeout(timer);
   }, []);
 
   const triggerToast = (msg: string) => {
@@ -397,8 +398,6 @@ export default function App({ initialTab = "home" }: { initialTab?: string }) {
     if (targetRoute) router.push(targetRoute);
   };
 
-  const currentContentTab = effectiveTab;
-
   return (
     <div
       className="w-full min-h-screen bg-[#0D0D0D] text-zinc-100 font-sans selection:bg-[#E51937] selection:text-white relative overflow-x-hidden"
@@ -415,7 +414,7 @@ export default function App({ initialTab = "home" }: { initialTab?: string }) {
       {showSplash && <Preloader />}
 
       <Header
-        activeTab={activeTab}
+        activeTab={currentTab}
         isSearchExpanded={isSearchExpanded}
         searchQuery={searchQuery}
         notificationsOpen={notificationsOpen}
@@ -432,18 +431,23 @@ export default function App({ initialTab = "home" }: { initialTab?: string }) {
         categories={CATEGORIES}
         onCategorySelect={(category) => {
           setSelectedCategory(category);
-          setActiveTab("home");
+          setActiveTab("categorias");
+          router.push("/categorias");
         }}
       />
 
       <SidebarDrawer
         isOpen={isDrawerOpen}
-        activeTab={activeTab}
+        activeTab={currentTab}
         onClose={() => setIsDrawerOpen(false)}
         onNavigate={(tab) => navigateToTab(tab)}
         onToggleNotifications={() => setNotificationsOpen(true)}
         onToast={triggerToast}
-        onCategorySelect={(category) => setSelectedCategory(category)}
+        onCategorySelect={(category) => {
+          setSelectedCategory(category);
+          setActiveTab("categorias");
+          router.push("/categorias");
+        }}
       />
 
       <button
@@ -461,7 +465,7 @@ export default function App({ initialTab = "home" }: { initialTab?: string }) {
         className="w-full px-0 md:px-3 py-0 pb-20"
         style={{ margin: 0, maxWidth: "100%" }}
       >
-        {activeTab === "home" && (
+        {currentTab === "home" && (
           <div className="space-y-10 animate-fade-in px-0 md:px-3">
             {featuredArticle && (
               <section
@@ -621,7 +625,7 @@ export default function App({ initialTab = "home" }: { initialTab?: string }) {
           </div>
         )}
 
-        {activeTab === "noticias" && (
+        {currentTab === "noticias" && (
           <div className="space-y-8 animate-fade-in px-0 md:px-3">
             <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between border-b border-zinc-800 pb-4">
               <div>
@@ -678,7 +682,7 @@ export default function App({ initialTab = "home" }: { initialTab?: string }) {
           </div>
         )}
 
-        {activeTab === "categorias" && (
+        {currentTab === "categorias" && (
           <div className="space-y-8 animate-fade-in px-0 md:px-3">
             <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between border-b border-zinc-800 pb-4">
               <div>
@@ -742,7 +746,7 @@ export default function App({ initialTab = "home" }: { initialTab?: string }) {
           </div>
         )}
 
-        {activeTab === "sobre" && (
+        {currentTab === "sobre" && (
           <div className="space-y-12 animate-fade-in max-w-5xl mx-auto">
             <div className="flex items-center gap-4 border-b border-zinc-800 pb-6">
               <SenaMascot className="w-12 h-12" />
@@ -838,7 +842,7 @@ export default function App({ initialTab = "home" }: { initialTab?: string }) {
           </div>
         )}
 
-        {activeTab === "admin" && (
+        {currentTab === "admin" && (
           <div className="space-y-6 animate-fade-in">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-zinc-800 pb-4">
               <div>
@@ -1208,21 +1212,6 @@ export default function App({ initialTab = "home" }: { initialTab?: string }) {
 
               <div className="space-y-1">
                 <label className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                  Imagem de capa
-                </label>
-                <input
-                  type="text"
-                  value={formData.image}
-                  onChange={(e) =>
-                    setFormData((prev) => ({ ...prev, image: e.target.value }))
-                  }
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm text-white focus:border-[#E51937] outline-none"
-                  placeholder="URL da imagem"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
                   Conteúdo
                 </label>
                 <div className="bg-zinc-950 border border-zinc-800 rounded-2xl overflow-hidden">
@@ -1248,6 +1237,190 @@ export default function App({ initialTab = "home" }: { initialTab?: string }) {
                     placeholder="Escreva o conteúdo da notícia..."
                   />
                 </div>
+              </div>
+
+              <div className="space-y-3 rounded-2xl border border-[#E51937]/30 bg-gradient-to-b from-[#111111] via-[#151515] to-[#0d0d0d] p-4 shadow-[0_0_0_1px_rgba(229,25,55,0.12)]">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <label className="text-xs font-semibold uppercase tracking-wider text-zinc-300">
+                    Estrutura da matéria
+                  </label>
+
+                  <div className="flex flex-wrap gap-2">
+                    {[{ type: "text", label: "Texto" }, { type: "title", label: "Título" }, { type: "image", label: "Imagem" }, { type: "video", label: "Vídeo" }, { type: "callout", label: "Destaque" }].map((item) => (
+                      <button
+                        key={item.type}
+                        type="button"
+                        onClick={() => addBlock(item.type as ArticleBlockType)}
+                        className="px-2.5 py-1.5 rounded-lg border border-red-500/30 bg-zinc-950 text-[10px] font-bold uppercase tracking-wider text-zinc-200 hover:border-[#E51937] hover:text-white transition-colors"
+                      >
+                        + {item.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {blocks.length === 0 ? (
+                  <div className="border border-dashed border-zinc-700 rounded-2xl bg-zinc-950/60 p-5 text-center">
+                    <p className="text-sm font-medium text-zinc-300">
+                      Nenhum bloco adicionado ainda.
+                    </p>
+                    <p className="text-xs text-zinc-500 mt-1">
+                      Use os botões acima para montar a notícia por blocos.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {blocks.map((block, index) => (
+                      <div
+                        key={block.id}
+                        className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-3 space-y-3"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-[#E51937]">
+                            {getBlockLabel(block.type)}
+                          </span>
+
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => moveBlock(block.id, "up")}
+                              className="p-1.5 rounded-lg border border-zinc-700 text-zinc-300 hover:text-white transition-colors"
+                              title="Mover para cima"
+                            >
+                              ↑
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => moveBlock(block.id, "down")}
+                              className="p-1.5 rounded-lg border border-zinc-700 text-zinc-300 hover:text-white transition-colors"
+                              title="Mover para baixo"
+                            >
+                              ↓
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => removeBlock(block.id)}
+                              className="p-1.5 rounded-lg border border-red-800/60 text-red-300 hover:bg-red-950/50 transition-colors"
+                              title="Remover bloco"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {block.type === "title" && (
+                          <div className="grid grid-cols-1 md:grid-cols-[1fr_120px] gap-3">
+                            <input
+                              type="text"
+                              value={block.heading ?? ""}
+                              onChange={(e) =>
+                                updateBlock(block.id, { heading: e.target.value })
+                              }
+                              placeholder="Título do bloco"
+                              className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-[#E51937]"
+                            />
+                            <select
+                              value={String(block.level ?? 2)}
+                              onChange={(e) =>
+                                updateBlock(block.id, {
+                                  level: Number(e.target.value) as 1 | 2 | 3,
+                                })
+                              }
+                              className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-[#E51937]"
+                            >
+                              <option value="1">H1</option>
+                              <option value="2">H2</option>
+                              <option value="3">H3</option>
+                            </select>
+                          </div>
+                        )}
+
+                        {block.type === "text" && (
+                          <textarea
+                            rows={5}
+                            value={block.content ?? ""}
+                            onChange={(e) =>
+                              updateBlock(block.id, { content: e.target.value })
+                            }
+                            placeholder="Escreva o conteúdo do bloco..."
+                            className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white outline-none resize-none focus:border-[#E51937]"
+                          />
+                        )}
+
+                        {block.type === "image" && (
+                          <div className="space-y-3">
+                            <input
+                              type="url"
+                              value={block.url ?? ""}
+                              onChange={(e) =>
+                                updateBlock(block.id, { url: e.target.value })
+                              }
+                              placeholder="URL da imagem"
+                              className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-[#E51937]"
+                            />
+                            <input
+                              type="text"
+                              value={block.alt ?? ""}
+                              onChange={(e) =>
+                                updateBlock(block.id, { alt: e.target.value })
+                              }
+                              placeholder="Texto alternativo"
+                              className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-[#E51937]"
+                            />
+                            <input
+                              type="text"
+                              value={block.caption ?? ""}
+                              onChange={(e) =>
+                                updateBlock(block.id, { caption: e.target.value })
+                              }
+                              placeholder="Legenda da imagem"
+                              className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-[#E51937]"
+                            />
+                          </div>
+                        )}
+
+                        {block.type === "video" && (
+                          <div className="space-y-3">
+                            <input
+                              type="url"
+                              value={block.url ?? ""}
+                              onChange={(e) =>
+                                updateBlock(block.id, { url: e.target.value })
+                              }
+                              placeholder="URL do vídeo"
+                              className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-[#E51937]"
+                            />
+                            <input
+                              type="text"
+                              value={block.caption ?? ""}
+                              onChange={(e) =>
+                                updateBlock(block.id, { caption: e.target.value })
+                              }
+                              placeholder="Descrição do vídeo"
+                              className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-[#E51937]"
+                            />
+                          </div>
+                        )}
+
+                        {block.type === "callout" && (
+                          <textarea
+                            rows={4}
+                            value={block.content ?? ""}
+                            onChange={(e) =>
+                              updateBlock(block.id, { content: e.target.value })
+                            }
+                            placeholder="Texto do destaque..."
+                            className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white outline-none resize-none focus:border-[#E51937]"
+                          />
+                        )}
+
+                        <div className="text-[10px] text-zinc-500">
+                          Bloco {index + 1}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-2">
@@ -1279,7 +1452,7 @@ export default function App({ initialTab = "home" }: { initialTab?: string }) {
                       key={item.type}
                       type="button"
                       onClick={() => addBlock(item.type as ArticleBlockType)}
-                      className="px-2.5 py-1.5 rounded-lg border border-zinc-700 bg-zinc-900 text-[10px] font-bold uppercase tracking-wider text-zinc-300 hover:border-[#E51937] hover:text-white transition-colors"
+                      className="px-2.5 py-1.5 rounded-lg border border-red-500/30 bg-zinc-950 text-[10px] font-bold uppercase tracking-wider text-zinc-200 hover:border-[#E51937] hover:text-white transition-colors"
                     >
                       + {item.label}
                     </button>
