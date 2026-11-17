@@ -1,4 +1,4 @@
-# SidebarDrawer - Documentação de Personalização e Integração
+# Revista digital
 
 ## Visão Geral do Componente
 
